@@ -26,9 +26,13 @@ To run
  
 ## start endpoint
 
+    POST        /start                  @uk.gov.hmrc.customs.notification.spike.controllers.Start.start
+
 This sends notifications
 
-## stop endpoint
+## end endpoint
+
+    GET         /end                    @uk.gov.hmrc.customs.notification.spike.controllers.Start.end
 
 This compares sent notifications with received notifications
 
