@@ -27,9 +27,6 @@ object CustomHeaderNames {
 }
 
 object Payloads {
-  //TODO: externalise to some config
-  val ClientA: ClientSubscriptionId = "fcff927b-11d4-41e9-87b1-bec27a275a40"
-  val ClientB: ClientSubscriptionId = "db86f737-841b-4904-ac7b-31bbac45280a"
 
   def clientPlayload(c: ClientSubscriptionId, seq: Int): Node =
 <Notification>

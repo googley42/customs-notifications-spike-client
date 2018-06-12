@@ -16,9 +16,10 @@
 
 package uk.gov.hmrc.customs.notification.spike.controllers
 
-import javax.inject.Singleton
+import javax.inject.{Inject, Singleton}
 
 import controllers.Default
+import play.api.Configuration
 import play.api.http.HeaderNames.{ACCEPT, CONTENT_TYPE}
 import play.api.http.{ContentTypes, MimeTypes}
 import play.api.mvc.Results._
@@ -35,7 +36,7 @@ import scala.concurrent.Future
 import scala.xml.{Node, NodeSeq}
 
 @Singleton
-class Start {
+class Start @Inject()(config: Configuration) {
 
   // shared state here to compare sent notifications with received
   @volatile
@@ -51,12 +52,15 @@ class Start {
     sent.clear()
     received.clear()
 
+    val clientASubscriptionId = config.getString("clientASubscriptionId").getOrElse(throw new IllegalStateException("cannot read clientASubscriptionId"))
+    val clientBSubscriptionId = config.getString("clientBSubscriptionId").getOrElse(throw new IllegalStateException("cannot read clientBSubscriptionId"))
+
     for {
-      _ <- sendNotificationForClient(ClientA, seq = 1)
-      _ <- sendNotificationForClient(ClientA, seq = 2)
-      _ <- sendNotificationForClient(ClientA, seq = 3)
-      _ <- sendNotificationForClient(ClientB, seq = 1)
-      response <- sendNotificationForClient(ClientB, seq = 2)
+      _ <- sendNotificationForClient(clientASubscriptionId, seq = 1)
+      _ <- sendNotificationForClient(clientASubscriptionId, seq = 2)
+      _ <- sendNotificationForClient(clientASubscriptionId, seq = 3)
+      _ <- sendNotificationForClient(clientBSubscriptionId, seq = 1)
+      response <- sendNotificationForClient(clientBSubscriptionId, seq = 2)
     } yield response
 
   }
@@ -68,9 +72,6 @@ class Start {
   def clientACallbackEndpoint: Action[AnyContent] = clientCallbackEndpoint("ClientA")
 
   def clientBCallbackEndpoint: Action[AnyContent] = clientCallbackEndpoint("ClientB")
-
-
-
 
 
 
