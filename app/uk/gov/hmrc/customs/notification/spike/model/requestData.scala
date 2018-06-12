@@ -39,4 +39,4 @@ object Payloads {
 
 }
 
-case class Notification(clientId: ClientSubscriptionId, seq: Int)
+case class Notification(clientSubscriptionId: ClientSubscriptionId, seq: Int)
