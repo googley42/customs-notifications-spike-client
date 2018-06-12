@@ -32,17 +32,20 @@ import uk.gov.hmrc.play.http.ws.WSPost
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
-import scala.xml.NodeSeq
+import scala.util.control.NonFatal
+import scala.xml.{Node, NodeSeq, Utility, XML}
 
 @Singleton
 class Start {
 
   // shared state here to compare sent notifications with received
-  private val sent = scala.collection.mutable.Map[ClientSubscriptionId, State]()
-  private val received = scala.collection.mutable.Map[ClientSubscriptionId, State]()
+  @volatile
+  private var sent = scala.collection.mutable.Map[ClientSubscriptionId, State]()
+  @volatile
+  private var received = scala.collection.mutable.Map[ClientSubscriptionId, State]()
 
-  case class State(seq: Seq[NodeSeq] = NodeSeq.Empty) {
-    def add(n: NodeSeq): State = State(seq :+ n)
+  case class State(seq: Seq[Node] = Seq.empty[Node]) {
+    def add(n: Node): State = State(seq :+ Utility.trim(n))
   }
 
   def start: Action[AnyContent] = Action.async {implicit request =>
@@ -50,11 +53,16 @@ class Start {
     received.clear()
 
     for {
-      _ <- sendNotificationForClient(ClientA, 1)
-      _ <- sendNotificationForClient(ClientA, 2)
-      response <- sendNotificationForClient(ClientA, 3)
+      _ <- sendNotificationForClient(ClientA, seq = 1)
+      _ <- sendNotificationForClient(ClientA, seq = 2)
+      response <- sendNotificationForClient(ClientA, seq = 3)
     } yield response
 
+  }
+
+  def end: Action[AnyContent] = Action.async {implicit request =>
+    //TODO: using toString at the moment to force evaluation of XML Elem. Does not work without toString.
+    Future.successful(Ok(s"\nsent=\n${sent.toSet}\nreceived=\n${received.toSet}\nsent==received: ${(sent.toSet.toString).equals((received.toSet.toString))}"))
   }
 
   def clientACallbackEndpoint: Action[AnyContent] = clientCallbackEndpoint("ClientA")
@@ -63,7 +71,7 @@ class Start {
     implicit val hc = HeaderCarrier()
     val headers = createHeaders(c)
 
-    Thread.sleep(50) // we need this to preserve sequencing of callbacks
+    Thread.sleep(50) // we need this to preserve sequencing of callbacks - not sure why
 
     val payload = clientPlayload(ClientA, seq)
     val payloadAsString = payload.toString
@@ -87,12 +95,19 @@ class Start {
 
   private def clientCallbackEndpoint(name: String): Action[AnyContent] = Action.async { request =>
     val maybePayloadAsXml: Option[NodeSeq] = request.body.asXml
-    val payloadAsXml = maybePayloadAsXml.get
+//    val pls_delete = (maybePayloadAsXml.get)(0).toString
+    val payloadAsXml: Node = string2xml((maybePayloadAsXml.get)(0).toString())
     val c = (payloadAsXml \ "clientSubscriptionId").text
     println(s"Extracted clientSubscriptionId from payload: $c")
-    //received.put(c, received(c).add(maybePayloadAsXml.get))
     received.put(c, received.get(c).fold(State(Seq(payloadAsXml)))(s => s.add(payloadAsXml)))
     println(s"\n<<< $name callback OK, \nheaders=\n${request.headers.toSimpleMap}\nbody=\n${maybePayloadAsXml.getOrElse("EMPTY BODY")}\nreceived=\n$received")
+    val s = sent.get(c).get.seq(0).toString()
+    val r = received.get(c).get.seq(0).toString()
+    val eq = s.equals(r)
+    println(s"\n<<< XXXXXXXXXXXXXXXXXX sent = ${sent.get(c).get.seq(0)}")
+    println(s"\n<<< XXXXXXXXXXXXXXXXXX sent = ${sent.get(c).get.seq(0).getClass}")
+    println(s"\n<<< XXXXXXXXXXXXXXXXXX received = ${received.get(c).get.seq(0).getClass}")
+    println(s"\n<<< XXXXXXXXXXXXXXXXXX = ${sent.get(c).get.seq(0) == received.get(c).get.seq(0)}")
     val response: Result = Status(Default.OK)(<ok>Received payload OK</ok>).as(ContentTypes.XML) // for customs-notification-gateway logging
     Future.successful(response)
   }
@@ -106,6 +121,14 @@ class Start {
     )
   }
 
+  protected def string2xml(s: String): Node = {
+    val xml = try {
+      XML.loadString(s)
+    } catch {
+      case NonFatal(thr) => throw thr
+    }
+    Utility.trim(xml)
+  }
 }
 
 case class HttpPostImpl() extends HttpPost with WSPost {

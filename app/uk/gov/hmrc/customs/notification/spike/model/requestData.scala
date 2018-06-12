@@ -16,7 +16,7 @@
 
 package uk.gov.hmrc.customs.notification.spike.model
 
-import scala.xml.{Elem, NodeSeq}
+import scala.xml.{Elem, Node}
 
 
 object CustomHeaderNames {
@@ -29,9 +29,7 @@ object CustomHeaderNames {
 object Payloads {
   val ClientA: ClientSubscriptionId = "fcff927b-11d4-41e9-87b1-bec27a275a40"
 
-  val XmlPayload: Elem = <Notification>Bar</Notification>
-
-  def clientPlayload(c: ClientSubscriptionId, seq: Int): NodeSeq =
+  def clientPlayload(c: ClientSubscriptionId, seq: Int): Node =
 <Notification>
   <clientSubscriptionId>{c}</clientSubscriptionId>
   <seq>{seq}</seq>
