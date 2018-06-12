@@ -23,17 +23,16 @@ import play.api.http.HeaderNames.{ACCEPT, CONTENT_TYPE}
 import play.api.http.{ContentTypes, MimeTypes}
 import play.api.mvc.Results._
 import play.api.mvc._
-import uk.gov.hmrc.customs.notification.spike.model.ClientSubscriptionId
 import uk.gov.hmrc.customs.notification.spike.model.CustomHeaderNames._
 import uk.gov.hmrc.customs.notification.spike.model.Payloads._
+import uk.gov.hmrc.customs.notification.spike.model.{ClientSubscriptionId, Notification}
 import uk.gov.hmrc.http.hooks.HttpHook
 import uk.gov.hmrc.http.{HeaderCarrier, HttpPost}
 import uk.gov.hmrc.play.http.ws.WSPost
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
-import scala.util.control.NonFatal
-import scala.xml.{Node, NodeSeq, Utility, XML}
+import scala.xml.{Node, NodeSeq}
 
 @Singleton
 class Start {
@@ -44,8 +43,8 @@ class Start {
   @volatile
   private var received = scala.collection.mutable.Map[ClientSubscriptionId, State]()
 
-  case class State(seq: Seq[Node] = Seq.empty[Node]) {
-    def add(n: Node): State = State(seq :+ Utility.trim(n))
+  case class State(seq: Seq[Notification] = Seq.empty) {
+    def add(n: Notification): State = State(seq :+ n)
   }
 
   def start: Action[AnyContent] = Action.async {implicit request =>
@@ -62,7 +61,7 @@ class Start {
 
   def end: Action[AnyContent] = Action.async {implicit request =>
     //TODO: using toString at the moment to force evaluation of XML Elem. Does not work without toString.
-    Future.successful(Ok(s"\nsent=\n${sent.toSet}\nreceived=\n${received.toSet}\nsent==received: ${(sent.toSet.toString).equals((received.toSet.toString))}"))
+    Future.successful(Ok(s"\nsent=\n${sent.toSet}\nreceived=\n${received.toSet}\nsent==received: ${sent.equals(received)}"))
   }
 
   def clientACallbackEndpoint: Action[AnyContent] = clientCallbackEndpoint("ClientA")
@@ -73,12 +72,13 @@ class Start {
 
     Thread.sleep(50) // we need this to preserve sequencing of callbacks - not sure why
 
-    val payload = clientPlayload(ClientA, seq)
+    val payload = clientPlayload(c, seq)
     val payloadAsString = payload.toString
 
     println(s"\n>>> Start - about to POST notification. \nheaders=\n${r.headers.toSimpleMap}\npayload=\n" + payload)
 
-    sent.put(c, sent.get(c).fold(State(Seq(payload)))(s => s.add(payload)))
+    val payload2 = Notification(c, seq)
+    sent.put(c, sent.get(c).fold(State(Seq(payload2)))(s => s.add(payload2)))
 
     HttpPostImpl().POSTString(
       "http://localhost:9821/customs-notification/notify",
@@ -95,20 +95,19 @@ class Start {
 
   private def clientCallbackEndpoint(name: String): Action[AnyContent] = Action.async { request =>
     val maybePayloadAsXml: Option[NodeSeq] = request.body.asXml
-//    val pls_delete = (maybePayloadAsXml.get)(0).toString
-    val payloadAsXml: Node = string2xml((maybePayloadAsXml.get)(0).toString())
+    val payloadAsXml: Node = maybePayloadAsXml.get.head
     val c = (payloadAsXml \ "clientSubscriptionId").text
-    println(s"Extracted clientSubscriptionId from payload: $c")
-    received.put(c, received.get(c).fold(State(Seq(payloadAsXml)))(s => s.add(payloadAsXml)))
+    val seq = (payloadAsXml \ "seq").text.toInt
+    val payload = Notification(c, seq)
+
+    println(s"Extracted from payload: $payload")
+
+    received.put(c, received.get(c).fold(State(Seq(payload)))(s => s.add(payload)))
+
     println(s"\n<<< $name callback OK, \nheaders=\n${request.headers.toSimpleMap}\nbody=\n${maybePayloadAsXml.getOrElse("EMPTY BODY")}\nreceived=\n$received")
-    val s = sent.get(c).get.seq(0).toString()
-    val r = received.get(c).get.seq(0).toString()
-    val eq = s.equals(r)
-    println(s"\n<<< XXXXXXXXXXXXXXXXXX sent = ${sent.get(c).get.seq(0)}")
-    println(s"\n<<< XXXXXXXXXXXXXXXXXX sent = ${sent.get(c).get.seq(0).getClass}")
-    println(s"\n<<< XXXXXXXXXXXXXXXXXX received = ${received.get(c).get.seq(0).getClass}")
-    println(s"\n<<< XXXXXXXXXXXXXXXXXX = ${sent.get(c).get.seq(0) == received.get(c).get.seq(0)}")
+
     val response: Result = Status(Default.OK)(<ok>Received payload OK</ok>).as(ContentTypes.XML) // for customs-notification-gateway logging
+
     Future.successful(response)
   }
 
@@ -121,14 +120,6 @@ class Start {
     )
   }
 
-  protected def string2xml(s: String): Node = {
-    val xml = try {
-      XML.loadString(s)
-    } catch {
-      case NonFatal(thr) => throw thr
-    }
-    Utility.trim(xml)
-  }
 }
 
 case class HttpPostImpl() extends HttpPost with WSPost {

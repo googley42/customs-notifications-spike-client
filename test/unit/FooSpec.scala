@@ -27,14 +27,11 @@ class FooSpec extends UnitSpec {
 
       val x: Set[(ClientSubscriptionId, State)] = received.toSet
 
-      println(s"\nsent=\n${sent.toSet}\nreceived=\n${received.toSet}\nsent==received: ${(sent.toSet).contains((received.toSet))}")
+      println(s"\nsent=\n${sent.toSet}\nreceived=\n${received.toSet}\nsent==received: ${sent.toSet.equals(received.toSet)}")
 
       sent == received shouldBe true
 
-//      implicit val orderByClientId = Ordering[(ClientSubscriptionId, State)].on[ClientSubscriptionId](s => s.order)
-//      val sentSorted = scala.collection.immutable.SortedSet[(ClientSubscriptionId, State)]() ++ sent.toSet
-//      val receivedSorted = scala.collection.immutable.SortedSet[(ClientSubscriptionId, State)]() ++ received.toSet
-//      sentSorted shouldBe receivedSorted.toString
+      Set(1, 2) == Set(2, 1) shouldBe true
     }
   }
 }

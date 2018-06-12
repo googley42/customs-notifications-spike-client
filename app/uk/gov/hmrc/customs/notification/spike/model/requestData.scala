@@ -37,5 +37,4 @@ object Payloads {
 
 }
 
-//TODO: do we even need this?
-case class Notification(clientId: ClientSubscriptionId)
+case class Notification(clientId: ClientSubscriptionId, seq: Int)
