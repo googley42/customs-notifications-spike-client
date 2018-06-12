@@ -89,7 +89,7 @@ class Start {
     val maybePayloadAsXml: Option[NodeSeq] = request.body.asXml
     val payloadAsXml = maybePayloadAsXml.get
     val c = (payloadAsXml \ "clientSubscriptionId").text
-    println(s"XXXXXXXXXXXXXXXXXXXXX c = $c")
+    println(s"Extracted clientSubscriptionId from payload: $c")
     //received.put(c, received(c).add(maybePayloadAsXml.get))
     received.put(c, received.get(c).fold(State(Seq(payloadAsXml)))(s => s.add(payloadAsXml)))
     println(s"\n<<< $name callback OK, \nheaders=\n${request.headers.toSimpleMap}\nbody=\n${maybePayloadAsXml.getOrElse("EMPTY BODY")}\nreceived=\n$received")
