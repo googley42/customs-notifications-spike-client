@@ -54,7 +54,9 @@ class Start {
     for {
       _ <- sendNotificationForClient(ClientA, seq = 1)
       _ <- sendNotificationForClient(ClientA, seq = 2)
-      response <- sendNotificationForClient(ClientA, seq = 3)
+      _ <- sendNotificationForClient(ClientA, seq = 3)
+      _ <- sendNotificationForClient(ClientB, seq = 1)
+      response <- sendNotificationForClient(ClientB, seq = 2)
     } yield response
 
   }
@@ -65,6 +67,13 @@ class Start {
   }
 
   def clientACallbackEndpoint: Action[AnyContent] = clientCallbackEndpoint("ClientA")
+
+  def clientBCallbackEndpoint: Action[AnyContent] = clientCallbackEndpoint("ClientB")
+
+
+
+
+
 
   private def sendNotificationForClient(c: ClientSubscriptionId, seq: Int)(implicit r: Request[AnyContent]) = {
     implicit val hc = HeaderCarrier()
@@ -77,8 +86,8 @@ class Start {
 
     println(s"\n>>> Start - about to POST notification. \nheaders=\n${r.headers.toSimpleMap}\npayload=\n" + payload)
 
-    val payload2 = Notification(c, seq)
-    sent.put(c, sent.get(c).fold(State(Seq(payload2)))(s => s.add(payload2)))
+    val notification = Notification(c, seq)
+    sent.put(c, sent.get(c).fold(State(Seq(notification)))(s => s.add(notification)))
 
     HttpPostImpl().POSTString(
       "http://localhost:9821/customs-notification/notify",

@@ -2,5 +2,6 @@
 POST        /start                  @uk.gov.hmrc.customs.notification.spike.controllers.Start.start
 GET         /end                    @uk.gov.hmrc.customs.notification.spike.controllers.Start.end
 POST        /clientACallback        @uk.gov.hmrc.customs.notification.spike.controllers.Start.clientACallbackEndpoint
+POST        /clientBCallback        @uk.gov.hmrc.customs.notification.spike.controllers.Start.clientBCallbackEndpoint
 
 # GET         /admin/metrics                      @com.kenshoo.play.metrics.MetricsController.metrics
