@@ -31,7 +31,12 @@ object Payloads {
 
   val XmlPayload: Elem = <Notification>Bar</Notification>
 
-  def clientPlayload(c: ClientSubscriptionId): NodeSeq = <Notification>{c}</Notification>
+  def clientPlayload(c: ClientSubscriptionId, seq: Int): NodeSeq =
+<Notification>
+  <clientSubscriptionId>{c}</clientSubscriptionId>
+  <seq>{seq}</seq>
+</Notification>
+
 }
 
 //TODO: do we even need this?
