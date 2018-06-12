@@ -62,7 +62,6 @@ class Start {
   }
 
   def end: Action[AnyContent] = Action.async {implicit request =>
-    //TODO: using toString at the moment to force evaluation of XML Elem. Does not work without toString.
     Future.successful(Ok(s"\nsent=\n${sent.toSet}\nreceived=\n${received.toSet}\nsent==received: ${sent.equals(received)}"))
   }
 
