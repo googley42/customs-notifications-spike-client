@@ -38,17 +38,23 @@ import scala.xml.NodeSeq
 class Start {
 
   // shared state here to compare sent notifications with received
-  val sent: Map[ClientSubscriptionId, Seq[NodeSeq]] = Map.empty
-  val received: Map[ClientSubscriptionId, Seq[NodeSeq]] = Map.empty
+  private val sent = scala.collection.mutable.Map[ClientSubscriptionId, State]()
+  private val received = scala.collection.mutable.Map[ClientSubscriptionId, State]()
+
+  case class State(seq: Seq[NodeSeq] = NodeSeq.Empty) {
+    def add(n: NodeSeq): State = State(seq :+ n)
+  }
 
   def start: Action[AnyContent] = Action.async {implicit request =>
-    Future.successful(Ok)
+    sent.clear()
+    received.clear()
 
     for {
       _ <- sendNotificationForClient(ClientA, 1)
       _ <- sendNotificationForClient(ClientA, 2)
       response <- sendNotificationForClient(ClientA, 3)
     } yield response
+
   }
 
   def clientACallbackEndpoint: Action[AnyContent] = clientCallbackEndpoint("ClientA")
@@ -59,16 +65,19 @@ class Start {
 
     Thread.sleep(50) // we need this to preserve sequencing of callbacks
 
-    val payload = clientPlayload(ClientA, seq).toString()
+    val payload = clientPlayload(ClientA, seq)
+    val payloadAsString = payload.toString
 
     println(s"\n>>> Start - about to POST notification. \nheaders=\n${r.headers.toSimpleMap}\npayload=\n" + payload)
 
+    sent.put(c, sent.get(c).fold(State(Seq(payload)))(s => s.add(payload)))
+
     HttpPostImpl().POSTString(
       "http://localhost:9821/customs-notification/notify",
-      payload,
+      payloadAsString,
       headers
     ).map { _ =>
-      println("Start - sent OK")
+      println(s"Start - sent OK. \nsent=\n$sent")
       Ok
     }.recover { case e: Throwable =>
       println(e.getStackTrace.toString)
@@ -77,9 +86,15 @@ class Start {
   }
 
   private def clientCallbackEndpoint(name: String): Action[AnyContent] = Action.async { request =>
-    println(s"\n<<< $name callback OK, \nheaders=\n${request.headers.toSimpleMap}\nbody=\n${request.body.asXml.getOrElse("EMPTY BODY")}")
-    val respose: Result = Status(Default.OK)(<ok>Received payload OK</ok>).as(ContentTypes.XML) // for customs-notification-gateway logging
-    Future.successful(respose)
+    val maybePayloadAsXml: Option[NodeSeq] = request.body.asXml
+    val payloadAsXml = maybePayloadAsXml.get
+    val c = (payloadAsXml \ "clientSubscriptionId").text
+    println(s"XXXXXXXXXXXXXXXXXXXXX c = $c")
+    //received.put(c, received(c).add(maybePayloadAsXml.get))
+    received.put(c, received.get(c).fold(State(Seq(payloadAsXml)))(s => s.add(payloadAsXml)))
+    println(s"\n<<< $name callback OK, \nheaders=\n${request.headers.toSimpleMap}\nbody=\n${maybePayloadAsXml.getOrElse("EMPTY BODY")}\nreceived=\n$received")
+    val response: Result = Status(Default.OK)(<ok>Received payload OK</ok>).as(ContentTypes.XML) // for customs-notification-gateway logging
+    Future.successful(response)
   }
 
   private def createHeaders(clientSubscriptionId: ClientSubscriptionId): Seq[(String, String)] = {
