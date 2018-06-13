@@ -66,7 +66,7 @@ class Start @Inject()(config: Configuration) {
   }
 
   def end: Action[AnyContent] = Action.async {implicit request =>
-    Future.successful(Ok(s"\nsent=\n${sent.toSet}\nreceived=\n${received.toSet}\nsent==received: ${sent.equals(received)}"))
+    Future.successful(Ok(s"\nsent=\n${sent.toSet}\nreceived=\n${received.toSet}\nsent==received: ${sent.toSet.equals(received.toSet)}"))
   }
 
   def clientACallbackEndpoint: Action[AnyContent] = clientCallbackEndpoint("ClientA")
@@ -75,7 +75,7 @@ class Start @Inject()(config: Configuration) {
 
 
 
-  private def sendNotificationForClient(c: ClientSubscriptionId, seq: Int)(implicit r: Request[AnyContent]) = {
+  private def sendNotificationForClient(c: ClientSubscriptionId, seq: Int)(implicit r: Request[AnyContent]): Future[Result] = {
     implicit val hc = HeaderCarrier()
     val headers = createHeaders(c)
 
