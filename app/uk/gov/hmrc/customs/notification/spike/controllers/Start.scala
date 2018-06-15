@@ -16,33 +16,35 @@
 
 package uk.gov.hmrc.customs.notification.spike.controllers
 
+import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.{Inject, Singleton}
 
 import controllers.Default
 import play.api.Configuration
-import play.api.http.HeaderNames.{ACCEPT, CONTENT_TYPE}
-import play.api.http.{ContentTypes, MimeTypes}
+import play.api.http.ContentTypes
 import play.api.mvc.Results._
 import play.api.mvc._
-import uk.gov.hmrc.customs.notification.spike.model.CustomHeaderNames._
-import uk.gov.hmrc.customs.notification.spike.model.Payloads._
+import uk.gov.hmrc.customs.notification.spike.connectors.NotificationConnector
 import uk.gov.hmrc.customs.notification.spike.model.{ClientSubscriptionId, Notification}
-import uk.gov.hmrc.http.hooks.HttpHook
-import uk.gov.hmrc.http.{HeaderCarrier, HttpPost}
-import uk.gov.hmrc.play.http.ws.WSPost
 
+import scala.collection.immutable.Seq
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 import scala.xml.{Node, NodeSeq}
 
 @Singleton
-class Start @Inject()(config: Configuration) {
+class Start @Inject()(config: Configuration, connector: NotificationConnector) {
 
   // shared state here to compare sent notifications with received
   @volatile
   private var sent = scala.collection.mutable.Map[ClientSubscriptionId, State]()
   @volatile
   private var received = scala.collection.mutable.Map[ClientSubscriptionId, State]()
+
+  private var seqA = new AtomicInteger()
+  private var seqB = new AtomicInteger()
+
+  val PauseMiliseconds = 5000
 
   case class State(seq: Seq[Notification] = Seq.empty) {
     def add(n: Notification): State = State(seq :+ n)
@@ -55,18 +57,25 @@ class Start @Inject()(config: Configuration) {
     val clientASubscriptionId = config.getString("clientASubscriptionId").getOrElse(throw new IllegalStateException("cannot read clientASubscriptionId"))
     val clientBSubscriptionId = config.getString("clientBSubscriptionId").getOrElse(throw new IllegalStateException("cannot read clientBSubscriptionId"))
 
-    for {
-      _ <- sendNotificationForClient(clientASubscriptionId, seq = 1)
-      _ <- sendNotificationForClient(clientASubscriptionId, seq = 2)
-      _ <- sendNotificationForClient(clientASubscriptionId, seq = 3)
-      _ <- sendNotificationForClient(clientBSubscriptionId, seq = 1)
-      response <- sendNotificationForClient(clientBSubscriptionId, seq = 2)
-    } yield response
+    val range: Seq[Int] = (1 to 60) // generates 5 mins elapsed of requests, one every 5 seconds
 
+    Future {
+      range.foreach { i =>
+        for {
+          _ <- sendNotificationForClient(clientASubscriptionId, seqA)
+          _ <- sendNotificationForClient(clientASubscriptionId, seqA)
+          _ <- sendNotificationForClient(clientBSubscriptionId, seqB)
+          _ <- sendNotificationForClient(clientASubscriptionId, seqA)
+          response <- sendNotificationForClient(clientBSubscriptionId, seqB)
+        } yield response
+      }
+    }
+
+    Future.successful(Ok)
   }
 
   def end: Action[AnyContent] = Action.async {implicit request =>
-    Future.successful(Ok(s"\nsent=\n${sent.toSet}\nreceived=\n${received.toSet}\nsent==received: ${sent.toSet.equals(received.toSet)}"))
+    Future.successful(Ok(s"\nsent=\n${sent}\nreceived=\n${received}\nsent==received: ${sent.toSet.equals(received.toSet)}"))
   }
 
   def clientACallbackEndpoint: Action[AnyContent] = clientCallbackEndpoint("ClientA")
@@ -75,31 +84,21 @@ class Start @Inject()(config: Configuration) {
 
 
 
-  private def sendNotificationForClient(c: ClientSubscriptionId, seq: Int)(implicit r: Request[AnyContent]): Future[Result] = {
-    implicit val hc = HeaderCarrier()
-    val headers = createHeaders(c)
+  private def sendNotificationForClient(c: ClientSubscriptionId, seq: AtomicInteger)(implicit r: Request[AnyContent]): Future[Result] = {
 
-    Thread.sleep(50) // we need this to preserve sequencing of callbacks - not sure why
+    val next = seq.addAndGet(1)
 
-    val payload = clientPlayload(c, seq)
-    val payloadAsString = payload.toString
+    Thread.sleep(PauseMiliseconds) // we need this to preserve sequencing of callbacks - not sure why
 
-    println(s"\n>>> Start - about to POST notification. \nheaders=\n${r.headers.toSimpleMap}\npayload=\n" + payload)
-
-    val notification = Notification(c, seq)
-    sent.put(c, sent.get(c).fold(State(Seq(notification)))(s => s.add(notification)))
-
-    HttpPostImpl().POSTString(
-      "http://localhost:9821/customs-notification/notify",
-      payloadAsString,
-      headers
-    ).map { _ =>
-      println(s"Start - sent OK. \nsent=\n$sent")
+    connector.sendNotificationForClient(c, next).map{_ =>
+      val notification = Notification(c, next)
+      sent.put(c, sent.get(c).fold(State(Seq(notification)))(s => s.add(notification)))
       Ok
-    }.recover { case e: Throwable =>
+    }.recover{ case e: Throwable =>
       println(e.getStackTrace.toString)
       throw e
     }
+
   }
 
   private def clientCallbackEndpoint(name: String): Action[AnyContent] = Action.async { request =>
@@ -120,17 +119,4 @@ class Start @Inject()(config: Configuration) {
     Future.successful(response)
   }
 
-  private def createHeaders(clientSubscriptionId: ClientSubscriptionId): Seq[(String, String)] = {
-    Seq(
-      CONTENT_TYPE -> (MimeTypes.XML + "; charset=UTF-8"),
-      ACCEPT -> MimeTypes.XML,
-      X_CDS_CLIENT_ID_HEADER_NAME -> clientSubscriptionId,
-      X_CONVERSATION_ID_HEADER_NAME -> "a93d197d-fe29-4ff5-bbd2-148f21bf0f36"
-    )
-  }
-
-}
-
-case class HttpPostImpl() extends HttpPost with WSPost {
-  override val hooks: Seq[HttpHook] = Seq.empty
 }
