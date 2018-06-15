@@ -41,10 +41,10 @@ class Start @Inject()(config: Configuration, connector: NotificationConnector) {
   @volatile
   private var received = scala.collection.mutable.Map[ClientSubscriptionId, State]()
 
-  private var seqA = new AtomicInteger()
-  private var seqB = new AtomicInteger()
+  private val seqA = new AtomicInteger()
+  private val seqB = new AtomicInteger()
 
-  val PauseMiliseconds = 5000
+  val PauseMilliseconds = 5000
 
   case class State(seq: Seq[Notification] = Seq.empty) {
     def add(n: Notification): State = State(seq :+ n)
@@ -88,7 +88,7 @@ class Start @Inject()(config: Configuration, connector: NotificationConnector) {
 
     val next = seq.addAndGet(1)
 
-    Thread.sleep(PauseMiliseconds) // we need this to preserve sequencing of callbacks - not sure why
+    Thread.sleep(PauseMilliseconds) // we need this to preserve sequencing of callbacks - not sure why
 
     connector.sendNotificationForClient(c, next).map{_ =>
       val notification = Notification(c, next)
