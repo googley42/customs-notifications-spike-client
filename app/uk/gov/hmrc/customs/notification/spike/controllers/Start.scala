@@ -57,7 +57,7 @@ class Start @Inject()(config: Configuration, connector: NotificationConnector) {
     val clientASubscriptionId = config.getString("clientASubscriptionId").getOrElse(throw new IllegalStateException("cannot read clientASubscriptionId"))
     val clientBSubscriptionId = config.getString("clientBSubscriptionId").getOrElse(throw new IllegalStateException("cannot read clientBSubscriptionId"))
 
-    val range: Seq[Int] = (1 to 60) // generates 5 mins elapsed of requests, one every 5 seconds
+    val range: Seq[Int] = (1 to 2) // 60 generates 5 mins elapsed of requests, one every 5 seconds
 
     Future {
       range.foreach { i =>

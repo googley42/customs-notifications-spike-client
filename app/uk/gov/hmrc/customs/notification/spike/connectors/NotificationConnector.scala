@@ -49,7 +49,7 @@ class NotificationConnector {
     //sent.put(c, sent.get(c).fold(State(Seq(notification)))(s => s.add(notification)))
 
     HttpPostImpl().POSTString(
-      "http://localhost:9821/customs-notification/notify",
+      "http://localhost:9821/customs-notification/notify-spike",
       payloadAsString,
       headers
     ).map { _ =>
