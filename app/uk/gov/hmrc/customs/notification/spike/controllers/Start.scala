@@ -16,6 +16,7 @@
 
 package uk.gov.hmrc.customs.notification.spike.controllers
 
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.{Inject, Singleton}
 
@@ -54,15 +55,18 @@ class Start @Inject()(config: Configuration, connector: NotificationConnector) {
     sent.clear()
     received.clear()
 
-    val clientASubscriptionId = config.getString("clientASubscriptionId").getOrElse(throw new IllegalStateException("cannot read clientASubscriptionId"))
-    val clientBSubscriptionId = config.getString("clientBSubscriptionId").getOrElse(throw new IllegalStateException("cannot read clientBSubscriptionId"))
+//    val clientASubscriptionId = config.getString("clientASubscriptionId").getOrElse(throw new IllegalStateException("cannot read clientASubscriptionId"))
+//    val clientBSubscriptionId = config.getString("clientBSubscriptionId").getOrElse(throw new IllegalStateException("cannot read clientBSubscriptionId"))
 
-    val range: Seq[Int] = (1 to 1) // 60 generates 5 mins elapsed of requests, one every 5 seconds
+    val range: Seq[Int] = (1 to 60) // 60 generates 5 mins elapsed of requests, one every 5 seconds
 
     Future {
       range.foreach { i =>
+        val clientASubscriptionId = UUID.randomUUID().toString
+        val clientBSubscriptionId = UUID.randomUUID().toString
         for {
           _ <- sendNotificationForClient(clientASubscriptionId, seqA)
+          _ <- sendNotificationForClient(clientBSubscriptionId, seqB)
           _ <- sendNotificationForClient(clientASubscriptionId, seqA)
           _ <- sendNotificationForClient(clientBSubscriptionId, seqB)
           _ <- sendNotificationForClient(clientASubscriptionId, seqA)
@@ -77,11 +81,6 @@ class Start @Inject()(config: Configuration, connector: NotificationConnector) {
   def end: Action[AnyContent] = Action.async {implicit request =>
     Future.successful(Ok(s"\nsent=\n${sent}\nreceived=\n${received}\nsent==received: ${sent.toSet.equals(received.toSet)}"))
   }
-
-//TODO: remove
-//  def clientACallbackEndpoint: Action[AnyContent] = clientCallbackEndpoint("ClientA")
-//
-//  def clientBCallbackEndpoint: Action[AnyContent] = clientCallbackEndpoint("ClientB")
 
   def callbackEndpoint: Action[AnyContent] = Action.async { request =>
     val maybePayloadAsXml: Option[NodeSeq] = request.body.asXml
@@ -118,6 +117,11 @@ class Start @Inject()(config: Configuration, connector: NotificationConnector) {
     }
 
   }
+
+  //TODO: remove
+  //  def clientACallbackEndpoint: Action[AnyContent] = clientCallbackEndpoint("ClientA")
+  //
+  //  def clientBCallbackEndpoint: Action[AnyContent] = clientCallbackEndpoint("ClientB")
 
   //TODO: remove
   private def clientCallbackEndpoint(name: String): Action[AnyContent] = Action.async { request =>
