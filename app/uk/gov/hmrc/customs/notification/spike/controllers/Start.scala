@@ -57,7 +57,7 @@ class Start @Inject()(config: Configuration, connector: NotificationConnector) {
     val clientASubscriptionId = config.getString("clientASubscriptionId").getOrElse(throw new IllegalStateException("cannot read clientASubscriptionId"))
     val clientBSubscriptionId = config.getString("clientBSubscriptionId").getOrElse(throw new IllegalStateException("cannot read clientBSubscriptionId"))
 
-    val range: Seq[Int] = (1 to 2) // 60 generates 5 mins elapsed of requests, one every 5 seconds
+    val range: Seq[Int] = (1 to 1) // 60 generates 5 mins elapsed of requests, one every 5 seconds
 
     Future {
       range.foreach { i =>
@@ -78,10 +78,28 @@ class Start @Inject()(config: Configuration, connector: NotificationConnector) {
     Future.successful(Ok(s"\nsent=\n${sent}\nreceived=\n${received}\nsent==received: ${sent.toSet.equals(received.toSet)}"))
   }
 
-  def clientACallbackEndpoint: Action[AnyContent] = clientCallbackEndpoint("ClientA")
+//TODO: remove
+//  def clientACallbackEndpoint: Action[AnyContent] = clientCallbackEndpoint("ClientA")
+//
+//  def clientBCallbackEndpoint: Action[AnyContent] = clientCallbackEndpoint("ClientB")
 
-  def clientBCallbackEndpoint: Action[AnyContent] = clientCallbackEndpoint("ClientB")
+  def callbackEndpoint: Action[AnyContent] = Action.async { request =>
+    val maybePayloadAsXml: Option[NodeSeq] = request.body.asXml
+    val payloadAsXml: Node = maybePayloadAsXml.get.head
+    val clientSubscriptionId = (payloadAsXml \ "clientSubscriptionId").text
+    val seq = (payloadAsXml \ "seq").text.toInt
+    val payload = Notification(clientSubscriptionId, seq)
 
+    println(s"Extracted from payload: $payload")
+
+    received.put(clientSubscriptionId, received.get(clientSubscriptionId).fold(State(Seq(payload)))(s => s.add(payload)))
+
+    println(s"\n<<< $clientSubscriptionId callback OK, \nheaders=\n${request.headers.toSimpleMap}\nbody=\n${maybePayloadAsXml.getOrElse("EMPTY BODY")}\nreceived=\n$received")
+
+    val response: Result = Status(Default.OK)(<ok>Received payload OK</ok>).as(ContentTypes.XML) // for customs-notification-gateway logging
+
+    Future.successful(response)
+  }
 
 
   private def sendNotificationForClient(c: ClientSubscriptionId, seq: AtomicInteger)(implicit r: Request[AnyContent]): Future[Result] = {
@@ -101,6 +119,7 @@ class Start @Inject()(config: Configuration, connector: NotificationConnector) {
 
   }
 
+  //TODO: remove
   private def clientCallbackEndpoint(name: String): Action[AnyContent] = Action.async { request =>
     val maybePayloadAsXml: Option[NodeSeq] = request.body.asXml
     val payloadAsXml: Node = maybePayloadAsXml.get.head
