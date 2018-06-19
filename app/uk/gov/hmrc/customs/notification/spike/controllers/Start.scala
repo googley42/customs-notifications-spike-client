@@ -41,6 +41,8 @@ class Start @Inject()(config: Configuration, connector: NotificationConnector) {
   private var sent = scala.collection.mutable.Map[ClientSubscriptionId, State]()
   @volatile
   private var received = scala.collection.mutable.Map[ClientSubscriptionId, State]()
+  @volatile
+  private var sendErrors = SendErrors()
 
   private val seqA = new AtomicInteger()
   private val seqB = new AtomicInteger()
@@ -49,6 +51,10 @@ class Start @Inject()(config: Configuration, connector: NotificationConnector) {
 
   case class State(seq: Seq[Notification] = Seq.empty) {
     def add(n: Notification): State = State(seq :+ n)
+  }
+
+  case class SendErrors(seq: Seq[ClientSubscriptionId] = Seq.empty) {
+    def add(n: ClientSubscriptionId): SendErrors = SendErrors(seq :+ n)
   }
 
   def start: Action[AnyContent] = Action.async {implicit request =>
@@ -79,7 +85,7 @@ class Start @Inject()(config: Configuration, connector: NotificationConnector) {
   }
 
   def end: Action[AnyContent] = Action.async {implicit request =>
-    Future.successful(Ok(s"\nsent=\n${sent}\nreceived=\n${received}\nsent==received: ${sent.toSet.equals(received.toSet)}"))
+    Future.successful(Ok(s"\nsent=\n${sent}\nreceived=\n${received}\nsent==received: ${sent.toSet.equals(received.toSet)}\nSend errors=\n${sendErrors.toString}"))
   }
 
   def callbackEndpoint: Action[AnyContent] = Action.async { request =>
@@ -112,8 +118,9 @@ class Start @Inject()(config: Configuration, connector: NotificationConnector) {
       sent.put(c, sent.get(c).fold(State(Seq(notification)))(s => s.add(notification)))
       Ok
     }.recover{ case e: Throwable =>
-      println(e.getStackTrace.toString)
-      throw e
+      println(s"XXXXXXXXXXXXXXXXXXX Error sending notification for clientSubscriptionId $c" + e.getStackTrace.toString)
+      sendErrors = sendErrors.add(c)
+      InternalServerError // gets ignored
     }
 
   }
