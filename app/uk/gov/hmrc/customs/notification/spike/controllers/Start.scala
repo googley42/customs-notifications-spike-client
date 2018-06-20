@@ -32,6 +32,7 @@ import scala.collection.immutable.Seq
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 import scala.xml.{Node, NodeSeq}
+import scala.concurrent.blocking
 
 @Singleton
 class Start @Inject()(config: Configuration, connector: NotificationConnector) {
@@ -85,7 +86,7 @@ class Start @Inject()(config: Configuration, connector: NotificationConnector) {
   }
 
   def end: Action[AnyContent] = Action.async {implicit request =>
-    Future.successful(Ok(s"\nsent=\n${sent}\nreceived=\n${received}\nsent==received: ${sent.toSet.equals(received.toSet)}\nSend errors=\n${sendErrors.toString}"))
+    Future.successful(Ok(s"\nsent==received: ${sent.toSet.equals(received.toSet)}\nSend errors=\n${sendErrors.toString}\nsent=\n${sent}\nreceived=\n${received}"))
   }
 
   def callbackEndpoint: Action[AnyContent] = Action.async { request =>
@@ -109,9 +110,11 @@ class Start @Inject()(config: Configuration, connector: NotificationConnector) {
 
   private def sendNotificationForClient(c: ClientSubscriptionId, seq: AtomicInteger)(implicit r: Request[AnyContent]): Future[Result] = {
 
-    val next = seq.addAndGet(1)
+    blocking {
+      Thread.sleep(PauseMilliseconds) // we need this to preserve sequencing of callbacks - not sure why
+    }
 
-    Thread.sleep(PauseMilliseconds) // we need this to preserve sequencing of callbacks - not sure why
+    val next = seq.addAndGet(1)
 
     connector.sendNotificationForClient(c, next).map{_ =>
       val notification = Notification(c, next)
