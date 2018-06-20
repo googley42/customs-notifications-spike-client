@@ -61,6 +61,7 @@ class Start @Inject()(config: Configuration, connector: NotificationConnector) {
   def start: Action[AnyContent] = Action.async {implicit request =>
     sent.clear()
     received.clear()
+    sendErrors = SendErrors()
 
 //    val clientASubscriptionId = config.getString("clientASubscriptionId").getOrElse(throw new IllegalStateException("cannot read clientASubscriptionId"))
 //    val clientBSubscriptionId = config.getString("clientBSubscriptionId").getOrElse(throw new IllegalStateException("cannot read clientBSubscriptionId"))
