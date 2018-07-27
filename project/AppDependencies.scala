@@ -11,6 +11,7 @@ object AppDependencies {
   private val wireMockVersion = "2.17.0"
   private val customsApiCommonVersion = "1.26.0"
   private val testScope = "test,it"
+  private val akkaVersion = "2.5.13"
 
   val xmlResolver = "xml-resolver" % "xml-resolver" % "1.2"
 
@@ -31,5 +32,9 @@ object AppDependencies {
   val customsApiCommon = "uk.gov.hmrc" %% "customs-api-common" % customsApiCommonVersion
 
   val customsApiCommonTests = "uk.gov.hmrc" %% "customs-api-common" % customsApiCommonVersion % testScope classifier "tests"
+
+  val akkaActor = "com.typesafe.akka" %% "akka-actor" % akkaVersion
+
+  val akkaTest = "com.typesafe.akka" %% "akka-testkit" % akkaVersion % Test
 
 }
