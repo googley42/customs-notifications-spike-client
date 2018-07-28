@@ -11,37 +11,27 @@ import scala.concurrent.duration._
 
 // received events
 final case object StartEvt
-case class LockReleasedEvt(maybeRelease: Option[Boolean] = None)
 final case class FetchedEvt(var it: Iterator[ClientNotification], returnState: State2)
 case object NextRequestEvt
 case object NextResponseEvt
-case object NextClientNotificationEvt
 case class LookedUpDeclarantEvt(maybeDeclarant: Option[DeclarantDetails])
 case object PushedEvt
 case object PullSendEvt
 case object PullSentEvt
 case object DeleteEvt
-case object PullDeleteEvt
 case class DeletedEvt(deleted: Boolean)
-case class PullDeletedEvt(deleted: Boolean)
-case object EnterReleaseLockEvt
+case object LockReleaseEvt
 case object LockReleasedEvt
 
 
 // states
 sealed trait State2
 case object PushInit extends State2
-case object PushFetched extends State2
 case object Looping extends State2
-//case object PushProcessRecord extends State2
 case object PushDeclarantDetail extends State2
 case object PushSent extends State2
 case object PullSend extends State2
 case object Delete extends State2
-case object PullDelete extends State2
-case object PullDeleted extends State2
-case object PullLoopInit extends State2
-case object ReleaseLock extends State2
 case object Exit extends State2
 
 sealed trait Data2
@@ -70,17 +60,6 @@ class Pull {
   def send(cn: ClientNotification): Future[Unit] = ???
 }
 
-
-/*
- PushInit
- PushFetch
- CheckingLock
- FetchDeclarantDetails
- CallingPush
- Exit
- PullFetch
- PullDelete
- */
 class ClientWorker(
   csid: String,
   lockOwnerId: String,
@@ -93,7 +72,7 @@ class ClientWorker(
   val lockRefreshFailed = new AtomicBoolean(false)
 
   private def exit() = {
-    self ! EnterReleaseLockEvt
+    self ! LockReleaseEvt
     goto(Exit)
   }
 
@@ -205,7 +184,7 @@ class ClientWorker(
   }
 
   when(Exit, stateTimeout = 1 second) {
-    case Event(EnterReleaseLockEvt, _) =>
+    case Event(LockReleaseEvt, _) =>
       info(Exit, "EnterReleaseLockEvt")
       repo.release(csid, lockOwnerId).map(_ => LockReleasedEvt) pipeTo self
       // log stop
