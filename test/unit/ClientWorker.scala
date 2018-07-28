@@ -15,6 +15,7 @@ final case class FetchedEvt(var it: Iterator[ClientNotification], returnState: S
 case object NextRequestEvt
 case object NextResponseEvt
 case class LookedUpDeclarantEvt(maybeDeclarant: Option[DeclarantDetails])
+case class PushEvt(declarant: DeclarantDetails)
 case object PushedEvt
 case object PullSendEvt
 case object PullSentEvt
@@ -23,13 +24,12 @@ case class DeletedEvt(deleted: Boolean)
 case object LockReleaseEvt
 case object LockReleasedEvt
 
-
 // states
 sealed trait State2
 case object PushInit extends State2
 case object Looping extends State2
 case object PushDeclarantDetail extends State2
-case object PushSent extends State2
+case object PushSend extends State2
 case object PullSend extends State2
 case object Delete extends State2
 case object Exit extends State2
@@ -88,6 +88,7 @@ class ClientWorker(
   when(PushInit, stateTimeout = 1 second) {
     case Event(StartEvt, Uninitialized2) =>
       info(PushInit, "Init")
+      //TODO: move to Looping
       repo.fetch(csid).map(cnList => FetchedEvt(cnList.iterator, PushDeclarantDetail)) pipeTo self
       goto(Looping)
   }
@@ -133,10 +134,8 @@ class ClientWorker(
       stay
     case Event(d@LookedUpDeclarantEvt(Some(declarant)), p@PushProcessData(_, cn, _)) =>
       info(PushDeclarantDetail, s"looked up declarant: $d")
-      //TODO: look at moving this to a PushSend state along with all other related PushSend stuff
-      // At the moment we a mix of Declarant and Send responsibilities
-      push.send(declarant, cn).map(_ => PushedEvt) pipeTo self
-      goto(PushSent) using p
+      self ! PushEvt(declarant)
+      goto(PushSend) using p
     case Event(LookedUpDeclarantEvt(None), p:PushProcessData) =>
       info(PushDeclarantDetail, s"looked up of declarant is None")
       goto(Exit) using p
@@ -145,13 +144,17 @@ class ClientWorker(
       exit()
   }
 
-  when(PushSent, stateTimeout = 1 second) {
+  when(PushSend, stateTimeout = 1 second) {
+    case Event(PushEvt(declarant), p@PushProcessData(cursor, cn, _)) =>
+      info(PushSend, s"Push requested for $cn")
+      push.send(declarant, cn).map(_ => PushedEvt) pipeTo self
+      stay
     case Event(PushedEvt, p@PushProcessData(cursor, _, _)) =>
-      info(PushSent, s"Pushed OK")
+      info(PushSend, s"Pushed OK")
       self ! DeleteEvt
       goto(Delete) using p
     case Event(Status.Failure(e), p@PushProcessData(_, cn, _)) => // TODO: find equivalent of NonFatal processing
-      info(PushSent, s"Push send of $cn returned an ERROR: " + e.getMessage)
+      info(PushSend, s"Push send of $cn returned an ERROR: " + e.getMessage)
       self ! PullSendEvt
       goto(PullSend) using p
   }
