@@ -11,6 +11,7 @@ import scala.concurrent.duration._
 
 // received events
 final case object StartEvt
+final case class LoopingInit(returnState: State2)
 final case class FetchedEvt(var it: Iterator[ClientNotification], returnState: State2)
 case object NextRequestEvt
 case object NextResponseEvt
@@ -28,7 +29,7 @@ case object LockReleasedEvt
 sealed trait State2
 case object PushInit extends State2
 case object Looping extends State2
-case object PushDeclarantDetail extends State2
+case object PushLookupDeclarant extends State2
 case object PushSend extends State2
 case object PullSend extends State2
 case object Delete extends State2
@@ -36,6 +37,7 @@ case object Exit extends State2
 
 sealed trait Data2
 case object Uninitialized2 extends Data2
+//TODO create CursorAndReturnState/LoopingState
 final case class Cursor(var it: Iterator[ClientNotification], returnState: State2) extends Data2
 final case class PushProcessData(cursor: Cursor, cn: ClientNotification, refreshFailed: AtomicBoolean) extends Data2
 
@@ -88,12 +90,14 @@ class ClientWorker(
   when(PushInit, stateTimeout = 1 second) {
     case Event(StartEvt, Uninitialized2) =>
       info(PushInit, "Init")
-      //TODO: move to Looping
-      repo.fetch(csid).map(cnList => FetchedEvt(cnList.iterator, PushDeclarantDetail)) pipeTo self
+      self ! LoopingInit(PushLookupDeclarant)
       goto(Looping)
   }
 
   when(Looping, stateTimeout = 1 second) {
+    case Event(LoopingInit(returnState), _) =>
+      repo.fetch(csid).map(cnList => FetchedEvt(cnList.iterator, returnState)) pipeTo self
+      stay
     case Event(FetchedEvt(it, returnState), _) =>
       info(returnState, s"Looping init fetched.hasNext=${it.hasNext}")
       if (it.hasNext) {
@@ -107,14 +111,14 @@ class ClientWorker(
       info(returnState, s"$returnState ERROR!" + e.getMessage)
       exit()
     case Event(NextRequestEvt, c@Cursor(it, returnState)) =>
-      info(returnState, s"PushLooping next" + c)
+      info(returnState, s"Looping next" + c)
       if (it.hasNext) {
-        info(returnState, "PushLooping has next")
+        info(returnState, "Looping has next")
         self ! NextResponseEvt
         goto(returnState) using(PushProcessData(c, it.next, lockRefreshFailed))
       } else {
         info(returnState, s"Looping end of cursor - about to do another fetch")
-        repo.fetch(csid).map(cnList => FetchedEvt(cnList.iterator, returnState)) pipeTo self
+        self ! LoopingInit(returnState)
         stay using Uninitialized2
       }
     case Event(Status.Failure(e), _) => // TODO: find equivalent of NonFatal processing
@@ -123,24 +127,25 @@ class ClientWorker(
       exit()
   }
 
-  when(PushDeclarantDetail, stateTimeout = 1 second) {
+  when(PushLookupDeclarant, stateTimeout = 1 second) {
     case Event(NextResponseEvt, PushProcessData(_, cn, refreshFailed)) =>
-      info(PushDeclarantDetail, "PushDeclarantDetail:" + cn)
+      info(PushLookupDeclarant, "PushDeclarantDetail:" + cn)
       if (refreshFailed.get) {
+        info(PushLookupDeclarant, "refresh failed")
         goto(Exit)
       } else {
         declarant.fetch(csid).map(o => LookedUpDeclarantEvt(o)) pipeTo self
       }
       stay
     case Event(d@LookedUpDeclarantEvt(Some(declarant)), p@PushProcessData(_, cn, _)) =>
-      info(PushDeclarantDetail, s"looked up declarant: $d")
+      info(PushLookupDeclarant, s"looked up declarant: $d")
       self ! PushEvt(declarant)
       goto(PushSend) using p
     case Event(LookedUpDeclarantEvt(None), p:PushProcessData) =>
-      info(PushDeclarantDetail, s"looked up of declarant is None")
+      info(PushLookupDeclarant, s"looked up of declarant is None")
       goto(Exit) using p
     case Event(Status.Failure(e), _) =>
-      info(PushDeclarantDetail, "ERROR!" + e.getMessage)
+      info(PushLookupDeclarant, "ERROR!" + e.getMessage)
       exit()
   }
 
@@ -167,15 +172,16 @@ class ClientWorker(
     case Event(DeletedEvt(deleted), p@PushProcessData(cursor, cn, _)) =>
       info(cursor.returnState, s"deleted $cn OK")
       //TODO: ignore delete failures for now
+      //TODO: when in PULL state ensure we stop pull loop and start again from PUSH state
       self ! NextRequestEvt
       goto(Looping) using cursor
   }
 
   when(PullSend, stateTimeout = 1 second) {
-    case Event(PullSendEvt, p@PushProcessData(_, cn, _)) =>
+    case Event(PullSendEvt, p@PushProcessData(cursor, cn, _)) =>
       info(PullSend, s"About to Pull send $cn")
       pull.send(cn).map(_ => PullSentEvt) pipeTo self
-      stay
+      stay using p.copy(cursor.copy(returnState = PullSend))
     case Event(PullSentEvt, p@PushProcessData(cursor, cn, _)) =>
       info(PullSend, s"Pull sent OK for $cn")
       self ! DeleteEvt
