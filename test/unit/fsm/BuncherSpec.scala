@@ -1,4 +1,4 @@
-package unit
+package unit.fsm
 
 import akka.actor.{ActorSystem, Props}
 import akka.testkit.{ImplicitSender, TestKit}

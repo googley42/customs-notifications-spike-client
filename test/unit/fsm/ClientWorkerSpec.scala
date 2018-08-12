@@ -1,4 +1,4 @@
-package unit
+package unit.fsm
 
 import akka.actor.{ActorSystem, Props}
 import akka.testkit.{ImplicitSender, TestKit}
@@ -51,6 +51,17 @@ class ClientWorkerSpec extends TestKit(ActorSystem("MySpec")) with ImplicitSende
       when(mockPush.send(any[DeclarantDetails], any[ClientNotification])).thenReturn(Future.failed(new RuntimeException("PUSH SEND BOOM!")))
       when(mockPull.send(any[ClientNotification])).thenReturn(Future.successful(()))
       when(mockRepo.delete(any[ClientNotification])).thenReturn(Future.successful(true))
+      worker ! StartEvt
+
+      Thread.sleep(2000)
+    }
+
+    "push AND pull fail and we leave notification in DB" in new SetUp {
+      when(mockRepo.fetch(any[String])).thenReturn(Future.successful(List(ClientNotification(1))), Future.successful(Nil))
+      when(mockRepo.release(any[String], any[String])).thenReturn(Future.successful(()))
+      when(mockDeclarant.fetch(any[String])).thenReturn(Future.successful(Some(DeclarantDetails(1))))
+      when(mockPush.send(any[DeclarantDetails], any[ClientNotification])).thenReturn(Future.failed(new RuntimeException("PUSH SEND BOOM!")))
+      when(mockPull.send(any[ClientNotification])).thenReturn(Future.failed((new RuntimeException("PULL SEND BOOM!"))))
       worker ! StartEvt
 
       Thread.sleep(2000)

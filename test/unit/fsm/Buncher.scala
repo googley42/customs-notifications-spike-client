@@ -2,9 +2,10 @@
 Example from #
 https://doc.akka.io/docs/akka/2.5/fsm.html
  */
-package unit
+package unit.fsm
 
-import akka.actor.{ ActorRef, FSM }
+import akka.actor.{ActorRef, FSM}
+
 import scala.concurrent.duration._
 
 // received events

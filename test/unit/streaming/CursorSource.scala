@@ -1,0 +1,27 @@
+package unit.streaming
+
+import akka.stream.stage.{GraphStage, GraphStageLogic, OutHandler}
+import akka.stream.{Attributes, Outlet, SourceShape}
+
+class CursorSource(seq: Seq[Int] *) extends GraphStage[SourceShape[Int]] {
+  val out: Outlet[Int] = Outlet("NumbersSource")
+  override val shape: SourceShape[Int] = SourceShape(out)
+
+  override def createLogic(inheritedAttributes: Attributes): GraphStageLogic =
+    new GraphStageLogic(shape) {
+      // All state MUST be inside the GraphStageLogic,
+      // never inside the enclosing GraphStage.
+      // This state is safe to access and modify from all the
+      // callbacks that are provided by GraphStageLogic and the
+      // registered handlers.
+      private var counter = 0
+      private var iterable: Iterable[Int] = Seq.empty[Int]
+
+      setHandler(out, new OutHandler {
+        override def onPull(): Unit = {
+          push(out, counter)
+          counter += 1
+        }
+      })
+    }
+}
