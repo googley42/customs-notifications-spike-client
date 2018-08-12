@@ -180,11 +180,11 @@ class StreamingSpec extends UnitSpec {
     ignored materialized value
      */
     "Complex Feedback XOR graph flow" in {
-      case class Notification(i: Int, isPush: Boolean = true)
+      case class Notification(i: Int)
       case class Declarant(i: Int)
-      case class PushNotification(n: Notification, d: Option[Declarant])
-      def portMapper(value: Notification): Int = value match {
-        case Notification(_, isPush) if isPush => 0
+      case class Holder(n: Notification, isPush: Boolean = true, d: Option[Declarant] = None, error: Option[String] = None)
+      def portMapper(value: Holder): Int = value match {
+        case Holder(_, isPush, _, _) if isPush => 0
         case _ => 1
       }
 
@@ -193,15 +193,15 @@ class StreamingSpec extends UnitSpec {
 
           import GraphDSL.Implicits._
           val seq = scala.collection.immutable.Seq(1,2,3,4,5)
-          val in = Source(seq).map(i => Notification(i, i % 2 == 0))
-          val lookupDec = Flow[Notification].map(n => PushNotification(n, Some(Declarant(n.i))))
-          val push = Sink.foreach[PushNotification](n => println(s"push $n "))
-          val pull = Sink.foreach[Notification](n => println(s"pull $n "))
-          val f1 = Flow[Notification].map(n => n)
-          val f2 = Flow[Notification].map(n => n.copy(i = n.i * 10, isPush = true))
+          val in = Source(seq).map(i => Holder(Notification(i), i % 2 == 0))
+//          val lookupDec = Flow[Notification].map(n => PushNotification(n, Some(Declarant(n.i))))
+          val push = Sink.foreach[Holder](h => println(s"push $h "))
+          val pull = Sink.foreach[Holder](h => println(s"pull $h "))
+          val f1 = Flow[Holder].map(h => h)
+          val f2 = Flow[Holder].map(h => h.copy(n = h.n.copy(i = h.n.i * 10), isPush = true))
 
-          val merge = builder.add(Merge[Notification](2))
-          val router = builder.add(Partition[Notification](2, portMapper))
+          val merge = builder.add(Merge[Holder](2))
+          val router = builder.add(Partition[Holder](2, portMapper))
 
 
           in ~> merge ~> router ~> f1 ~> pull
