@@ -3,7 +3,7 @@ package unit.streaming
 import akka.stream.stage.{GraphStage, GraphStageLogic, OutHandler}
 import akka.stream.{Attributes, Outlet, SourceShape}
 
-class CursorSource(seq: Seq[Int] *) extends GraphStage[SourceShape[Int]] {
+class CursorSource(seq: Int *) extends GraphStage[SourceShape[Int]] {
   val out: Outlet[Int] = Outlet("NumbersSource")
   override val shape: SourceShape[Int] = SourceShape(out)
 
@@ -14,14 +14,24 @@ class CursorSource(seq: Seq[Int] *) extends GraphStage[SourceShape[Int]] {
       // This state is safe to access and modify from all the
       // callbacks that are provided by GraphStageLogic and the
       // registered handlers.
-      private var counter = 0
-      private var iterable: Iterable[Int] = Seq.empty[Int]
+      private val iterator = seq.iterator
 
       setHandler(out, new OutHandler {
         override def onPull(): Unit = {
-          push(out, counter)
-          counter += 1
+          if (iterator.hasNext) {
+            println(s"XXXXXXXXXXXXX hasNext()")
+            push(out, iterator.next())
+          } else {
+            println(s"XXXXXXXXXXXXX does not have next")
+          }
         }
+
+        override def onDownstreamFinish(): Unit = {
+          println(s"XXXXXXXXXXXXXx onDownstreamFinish called")
+          super.onDownstreamFinish()
+        }
+
+
       })
     }
 }

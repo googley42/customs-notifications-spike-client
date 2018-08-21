@@ -11,7 +11,7 @@ object AppDependencies {
   private val wireMockVersion = "2.17.0"
   private val customsApiCommonVersion = "1.26.0"
   private val testScope = "test,it"
-  private val akkaVersion = "2.5.13"
+  private val akkaVersion = "2.5.14"
 
   val xmlResolver = "xml-resolver" % "xml-resolver" % "1.2"
 
@@ -36,5 +36,7 @@ object AppDependencies {
   val akkaActor = "com.typesafe.akka" %% "akka-actor" % akkaVersion
 
   val akkaTest = "com.typesafe.akka" %% "akka-testkit" % akkaVersion % Test
+
+  val akkaStreams = "com.typesafe.akka" %% "akka-stream" % akkaVersion
 
 }

@@ -50,6 +50,7 @@ lazy val microservice = (project in file("."))
     scoverageSettings
   )
 
+
 def onPackageName(rootPackage: String): String => Boolean = {
   testName => testName startsWith rootPackage
 }
@@ -110,7 +111,7 @@ lazy val scoverageSettings: Seq[Setting[_]] = Seq(
 
 scalastyleConfig := baseDirectory.value / "project" / "scalastyle-config.xml"
 
-val compileDependencies = Seq(akkaActor, bootstrapPlay25, xmlResolver, customsApiCommon)
+val compileDependencies = Seq(akkaActor, akkaStreams, bootstrapPlay25, xmlResolver, customsApiCommon)
 
 val testDependencies = Seq(akkaTest, hmrcTest, scalaTest, pegDown,
   scalaTestPlusPlay, wireMock, mockito, customsApiCommonTests)
