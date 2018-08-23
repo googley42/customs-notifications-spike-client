@@ -1,6 +1,6 @@
 package unit.streaming
 
-import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger, AtomicReference}
 
 import akka.actor.ActorSystem
 import akka.stream._
@@ -8,6 +8,7 @@ import akka.{Done, NotUsed}
 import akka.stream.scaladsl.{Broadcast, Flow, GraphDSL, Keep, Merge, Partition, RestartSource, RunnableGraph, Sink, Source}
 import uk.gov.hmrc.play.test.UnitSpec
 
+import scala.annotation.tailrec
 import scala.collection.immutable.Range.Inclusive
 import scala.collection.immutable.Seq
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -42,6 +43,7 @@ class StreamingSpec extends UnitSpec {
       val sink = Sink.foreach[Int](i => println(s"i=$i"))
       val dataflow:RunnableGraph[NotUsed] = source.to(sink)
       dataflow.run
+
     }
     "some folding" in {
       val source:Source[Int, NotUsed] = Source(1 to 5)
@@ -60,8 +62,8 @@ class StreamingSpec extends UnitSpec {
       fut2.onComplete(println)(system.dispatcher)
     }
     "simplest flow TWO" in {
-//      val source:Source[Int, NotUsed] = RestartSource.onFailuresWithBackoff(1 second, 2 second, 0.0, 2)(() => Source(1 to 5))
-      val source:Source[Int, NotUsed] = Source(1 to 5)
+      val source:Source[Int, NotUsed] = RestartSource.onFailuresWithBackoff(1 second, 2 second, 0.0, 2)(() => Source(1 to 5))
+//      val source:Source[Int, NotUsed] = Source(1 to 5)
       val sink2: Sink[Int, Future[Done]] = Sink.foreach(i => println(s"i=$i"))
       val flow = Flow[Int].map{i =>
         println(s"flow i=$i")
@@ -130,7 +132,7 @@ class StreamingSpec extends UnitSpec {
     Foo(10,item 10, flip=true sleep = 0  elapsed=264,true)
     */
     "graph builder with async stage" in {
-      val flip = new AtomicBoolean(false)
+      val switchToPull = new AtomicBoolean(false)
       val max = 20
       case class Foo(i: Int,  msg: String, ok: Boolean = true)
       val g = RunnableGraph.fromGraph(GraphDSL.create() {
@@ -138,17 +140,17 @@ class StreamingSpec extends UnitSpec {
           val start = System.currentTimeMillis()
           val mapper: Int => Future[Foo] = i => Future{
 //println(s"i=$i flip=${flip.get} condition=${!flip.get() && i == 5}")
-            flip.compareAndSet(false, !flip.get() && i == 5)
+            switchToPull.compareAndSet(false, !switchToPull.get() && i == 5)
 //            if (!flip.get() && i == 5) {
 //              flip.set(true)
 //            }
             var sleep = 0
-            if (flip.get == false) {
+            if (switchToPull.get == false) {
               sleep = Random.nextInt(1000)
               Thread.sleep(sleep)
             }
-            val msg = s"item $i, flip=$flip sleep = $sleep  elapsed=${System.currentTimeMillis() - start}"
-            Foo(i, msg, flip.get)
+            val msg = s"item $i, flip=$switchToPull sleep = $sleep  elapsed=${System.currentTimeMillis() - start}"
+            Foo(i, msg, switchToPull.get)
           }
           val asynchFlow = Flow[Int].mapAsync[Foo](5)(mapper)
 
@@ -378,7 +380,23 @@ class StreamingSpec extends UnitSpec {
     RestartWithBackoffLogic
      */
     "RestartSource" in {
-      val source = RestartSource.withBackoff(1 second, 5 seconds, 0.0, 2)(() => Source(Seq(1,2,3)))
+
+      val hasFirst = new AtomicBoolean(false)
+      def dynamicSource: Source[Int, NotUsed] = {
+        if (hasFirst.compareAndSet(true, false)) {
+          val seq = 1 to Random.nextInt(3)
+          println(s"XXXXX not empty, new seq = $seq hasFirst=$hasFirst")
+          Source(seq)
+        } else {
+          println(s"XXXXX empty hasFirst=$hasFirst")
+          Source(Seq.empty[Int])
+        }
+      }
+
+      val source = RestartSource.withBackoff(0 second, 5 seconds, 0.0, 3)(() => Source(Seq.empty[Int])).map{i =>
+        hasFirst.compareAndSet(false, true)
+        i
+      }
       val sink = Sink.foreach(println)
       val dataflow = source.toMat(sink)(Keep.right)
       await(dataflow.run)
@@ -393,8 +411,6 @@ class StreamingSpec extends UnitSpec {
 
       error.getMessage shouldBe "last of empty stream"
     }
-
-
 
     "Sink.last with recover" in {
       val source = Source(Seq())
@@ -418,37 +434,55 @@ class StreamingSpec extends UnitSpec {
       error.getMessage shouldBe "head of empty stream"
     }
 
-    //TODO get this working
-    "RestartSource on Sink.last" in {
-      var restartCount = 0
-      val loggingMaterializer = ActorMaterializer(ActorMaterializerSettings(system).withSupervisionStrategy { e =>
-        restartCount += 1
-        println(s"Exception: $e restartCount=$restartCount")
-        if (restartCount < 3) {
-          Supervision.Restart
-        } else {
-          Supervision.stop
-        }
-      })
 
-      //https://stackoverflow.com/questions/49225365/count-number-of-elements-in-akka-streams
-      var counter = -1
-      val map: Map[Int, Seq[Int]] = Map(0 -> scala.collection.immutable.Seq(1, 2), 1 -> scala.collection.immutable.Seq(3,4), 2 -> scala.collection.immutable.Seq())
-      def cycleSeq: Seq[Int] = {
-        counter += 1
-        println(s"cycleSeq counter=$counter")
-        map(counter)
-      }
+//      var restartCount = 0
+//      val loggingMaterializer = ActorMaterializer(ActorMaterializerSettings(system).withSupervisionStrategy { e =>
+//        restartCount += 1
+//        println(s"Exception: $e restartCount=$restartCount")
+//        if (restartCount < 3) {
+//          Supervision.Restart
+//        } else {
+//          Supervision.stop
+//        }
+//      })
+
+//      //https://stackoverflow.com/questions/49225365/count-number-of-elements-in-akka-streams
+//      var counter = -1
+//      val map: Map[Int, Seq[Int]] = Map(0 -> scala.collection.immutable.Seq(1, 2), 1 -> scala.collection.immutable.Seq(3,4), 2 -> scala.collection.immutable.Seq())
+//      def cycleSeq: Seq[Int] = {
+//        counter += 1
+//        println(s"cycleSeq counter=$counter")
+//        map(counter)
+//      }
+
 //      val source = RestartSource.onFailuresWithBackoff(1 second, 2 seconds, 0.0, 2)(() => Source(cycleSeq))
 //      val source = Source(cycleSeq)
-      val source = Source(1 to 2)
-      val sink = Sink.foreach(println)
-      val sink2 = Sink.last[Int]
-      val dataflow =
-        source.alsoToMat(sink)(Keep.right)
-          .toMat(sink2)(Keep.both)
-      val (fIgnore, fInt) = await(dataflow.run()/*(loggingMaterializer)*/)
-      val i = await(fInt)
+
+    "Loop on Source on Sink.optionLast" in {
+      def dynamicSource = Source(1 to Random.nextInt(5)) // represents a cursor from a database that we want to re-run if not empty
+
+      def doFlow: Future[Option[Int]] = {
+        val source = dynamicSource
+        val sink = Sink.foreach(println)
+        val sink2 = Sink.lastOption[Int]
+        val dataflow =
+          source.alsoToMat(sink)(Keep.right)
+            .toMat(sink2)(Keep.both)
+        val (fIgnore, fInt) = dataflow.run()/*(loggingMaterializer)*/
+        fInt
+      }
+
+      // TODO: make this tail recursive
+      def loop(eventuallyMaybeInt: Future[Option[Int]]): Future[Option[Int]] = {
+        eventuallyMaybeInt.flatMap { o =>
+          o match {
+            case None => eventuallyMaybeInt
+            case _ => loop(doFlow)
+          }
+        }
+      }
+
+      val i = await(loop(doFlow))
       println(s"Sink.last i=$i")
     }
 
